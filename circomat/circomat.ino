@@ -49,6 +49,8 @@ InputStates preassure_state = UNDEFINED;
 constexpr unsigned long cold_wash_period = 360000; // 420000 7 min
 constexpr unsigned long hot_wash_period = 1800000; // 30 min
 
+bool all_done = false;
+
 
 void setupInitialPinStates() {
   digitalWrite(MAIN_ENGIN_PIN, HIGH);
@@ -82,8 +84,6 @@ void setup() {
   setupInitialPinStates();
 }
 
-volatile bool all_done = false;
-
 void loop() {
   // put your main code here, to run repeatedly:
 
@@ -97,7 +97,6 @@ void loop() {
       has_err = performColdWaterWash();
     }
     performWaitForAction(40000);
-    //delay(20000);
     if (!has_err) {
       Serial.println("Extra liquid");
       has_err = performGetExternalLiquid(60000);
@@ -195,21 +194,21 @@ bool performHotWaterWash() {
       digitalWrite(HOT_INPUT_PIN, LOW);
     }
 
-    if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) == LOW_ON) {
-      const unsigned long water_heating_started = millis();
-      digitalWrite(HEATER_EN_PIN, HIGH);
-      while (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) != HIGH_ON) {
-        if (checkForErrors(water_heating_started, 300000)) {
-          return true;
-        }
-        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == LOW_ON) {
-          digitalWrite(HOT_INPUT_PIN, HIGH);
-        }
-
-        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
-          digitalWrite(HOT_INPUT_PIN, LOW);
-        }
-      }
+//    if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) == LOW_ON) {
+//      const unsigned long water_heating_started = millis();
+//      digitalWrite(HEATER_EN_PIN, HIGH);
+//      while (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) != HIGH_ON) {
+//        if (checkForErrors(water_heating_started, 300000)) {
+//          return true;
+//        }
+//        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == LOW_ON) {
+//          digitalWrite(HOT_INPUT_PIN, HIGH);
+//        }
+//
+//        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
+//          digitalWrite(HOT_INPUT_PIN, LOW);
+//        }
+//      }
       digitalWrite(HEATER_EN_PIN, LOW);
       end_time = end_time +  (millis() - water_heating_started);
     }
@@ -217,6 +216,7 @@ bool performHotWaterWash() {
       return true;
     }
   }
+  digitalWrite(HOT_EXTERNAL_LIQUID_PIN, LOW);
   digitalWrite(HOT_INPUT_PIN, LOW);
   digitalWrite(HOT_VACUUM_PIN, LOW);
   performAirCleaning(30000);
@@ -235,6 +235,12 @@ bool performAirCleaning(unsigned long air_cleaning_period) {
     }
   }
   digitalWrite(VACUUM_AIR_PIN, LOW);
+  performSystemFlushing();
+  while (millis() < end_time / 2) {
+    if (checkForErrors(0, 0)) {
+      return true;
+    }
+  }
   performSystemFlushing();
   setupInitialPinStates();
   return false;
