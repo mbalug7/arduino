@@ -46,7 +46,7 @@ InputStates getSensorState(int8_t high_pin, int8_t low_pin) {
 InputStates thermostat_state = UNDEFINED;
 InputStates preassure_state = UNDEFINED;
 
-constexpr unsigned long cold_wash_period = 420000; // 420000 7 min
+constexpr unsigned long cold_wash_period = 360000; // 420000 7 min
 constexpr unsigned long hot_wash_period = 1800000; // 30 min
 
 
@@ -124,13 +124,16 @@ bool performColdWaterWash() {
   unsigned long end_time = millis() + cold_wash_period;
   digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(COLD_VACUUM_PIN, HIGH);
+  digitalWrite(COLD_INPUT_PIN, HIGH);
+  unsigned long start_time = millis();
+  bool can_finish = false;
   while (millis() < end_time) {
 
     if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == LOW_ON) {
       digitalWrite(COLD_INPUT_PIN, HIGH);
     }
 
-    if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
+    if (millis() - start_time > 180000 && getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
       digitalWrite(COLD_INPUT_PIN, LOW);
     }
     if (checkForErrors(0, 0)) {
@@ -180,6 +183,7 @@ bool performHotWaterWash() {
   unsigned long end_time = millis() + hot_wash_period;
   digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(HOT_VACUUM_PIN, HIGH);
+  digitalWrite(HOT_EXTERNAL_LIQUID_PIN, HIGH);
 
   while (millis() < end_time) {
 
@@ -238,7 +242,7 @@ bool performAirCleaning(unsigned long air_cleaning_period) {
 
 bool performWaitForAction(unsigned long delay_period) {
   unsigned long end_time = millis() + delay_period;
-  while (millis() < delay_period) {
+  while (millis() < end_time) {
     if (checkForErrors(0, 0)) {
       return true;
     }
