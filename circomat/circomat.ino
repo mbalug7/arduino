@@ -51,7 +51,6 @@ constexpr unsigned long hot_wash_period = 1800000; // 30 min
 
 bool all_done = false;
 
-
 void setupInitialPinStates() {
   digitalWrite(MAIN_ENGIN_PIN, HIGH);
   digitalWrite(COLD_INPUT_PIN, LOW);
@@ -120,8 +119,9 @@ void loop() {
 
 
 bool performColdWaterWash() {
+
+  performEngineStart();
   unsigned long end_time = millis() + cold_wash_period;
-  digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(COLD_VACUUM_PIN, HIGH);
   digitalWrite(COLD_INPUT_PIN, HIGH);
   unsigned long start_time = millis();
@@ -158,8 +158,8 @@ bool performSystemFlushing() {
 
 
 bool performGetExternalLiquid(unsigned long get_external_fluid_period) {
+    performEngineStart();
   unsigned long end_time = millis() + get_external_fluid_period;
-  digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(HOT_VACUUM_PIN, HIGH);
   digitalWrite(HOT_EXTERNAL_LIQUID_PIN, HIGH);
   while (millis() < end_time) {
@@ -179,8 +179,8 @@ bool performGetExternalLiquid(unsigned long get_external_fluid_period) {
 
 
 bool performHotWaterWash() {
+    performEngineStart();
   unsigned long end_time = millis() + hot_wash_period;
-  digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(HOT_VACUUM_PIN, HIGH);
   digitalWrite(HOT_EXTERNAL_LIQUID_PIN, HIGH);
 
@@ -194,21 +194,21 @@ bool performHotWaterWash() {
       digitalWrite(HOT_INPUT_PIN, LOW);
     }
 
-//    if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) == LOW_ON) {
-//      const unsigned long water_heating_started = millis();
-//      digitalWrite(HEATER_EN_PIN, HIGH);
-//      while (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) != HIGH_ON) {
-//        if (checkForErrors(water_heating_started, 300000)) {
-//          return true;
-//        }
-//        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == LOW_ON) {
-//          digitalWrite(HOT_INPUT_PIN, HIGH);
-//        }
-//
-//        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
-//          digitalWrite(HOT_INPUT_PIN, LOW);
-//        }
-//      }
+    if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) == LOW_ON) {
+      const unsigned long water_heating_started = millis();
+      digitalWrite(HEATER_EN_PIN, HIGH);
+      while (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) != LOW_ON && getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN) != HIGH_ON && millis() < end_time + hot_wash_period) {
+        if (checkForErrors(water_heating_started, 300000)) {
+          return true;
+        }
+        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == LOW_ON) {
+          digitalWrite(HOT_INPUT_PIN, HIGH);
+        }
+
+        if (getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN) == HIGH_ON) {
+          digitalWrite(HOT_INPUT_PIN, LOW);
+        }
+      }
       digitalWrite(HEATER_EN_PIN, LOW);
       end_time = end_time +  (millis() - water_heating_started);
     }
@@ -225,8 +225,8 @@ bool performHotWaterWash() {
 }
 
 bool performAirCleaning(unsigned long air_cleaning_period) {
+    performEngineStart();
   unsigned long end_time = millis() + air_cleaning_period;
-  digitalWrite(MAIN_ENGIN_PIN, LOW);
   digitalWrite(VACUUM_AIR_PIN, HIGH);
   digitalWrite(COLD_VACUUM_PIN, HIGH);
   while (millis() < end_time) {
@@ -246,6 +246,13 @@ bool performAirCleaning(unsigned long air_cleaning_period) {
   return false;
 }
 
+void performEngineStart() {
+  if (digitalRead(MAIN_ENGIN_PIN) == HIGH) {
+    digitalWrite(MAIN_ENGIN_PIN, LOW);
+    performWaitForAction(30000);
+  }
+}
+
 bool performWaitForAction(unsigned long delay_period) {
   unsigned long end_time = millis() + delay_period;
   while (millis() < end_time) {
@@ -253,7 +260,10 @@ bool performWaitForAction(unsigned long delay_period) {
       return true;
     }
   }
+  return false;
 }
+
+
 
 bool checkForErrors(const unsigned long action_started_time, const unsigned long action_max_performing_period) {
   thermostat_state = getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN);
