@@ -15,11 +15,23 @@ constexpr int8_t VACUUM_AIR_PIN = 9;
 constexpr int8_t HEATER_EN_PIN = 10;
 constexpr int8_t PUMP_EN_PIN = 11;
 
+constexpr int8_t LED_INDICATOR = 13;
+constexpr int8_t INPUT_BUTTON = A0;
+
+constexpr int PLAY_TIMEOUT = 5000:
+constexpr int CHANGE_MENU_STATE_TIMEOUT = 1000;
+
 enum InputStates {
   FAIL = 1,
   HIGH_ON = 3,
   LOW_ON = 5,
   UNDEFINED = 6
+};
+
+enum MenuStates {
+  DEF = 0,
+  COLD_WASH = 2,
+  HOT_WASH = 1,
 };
 
 InputStates getSensorState(int8_t high_pin, int8_t low_pin) {
@@ -42,12 +54,14 @@ InputStates getSensorState(int8_t high_pin, int8_t low_pin) {
   return state;
 }
 
-
+MenuStates menu_state = DEF;
 InputStates thermostat_state = UNDEFINED;
 InputStates preassure_state = UNDEFINED;
 
 constexpr unsigned long cold_wash_period = 360000; // 420000 7 min
 constexpr unsigned long hot_wash_period = 1800000; // 30 min
+
+static unsigned long last_blink_time = 0;
 
 bool all_done = false;
 
@@ -61,6 +75,7 @@ void setupInitialPinStates() {
   digitalWrite(VACUUM_AIR_PIN, LOW);
   digitalWrite(HEATER_EN_PIN, LOW);
   digitalWrite(PUMP_EN_PIN, LOW);
+  digitalWrite(LED_INDICATOR, LOW);
 }
 
 void setup() {
@@ -69,6 +84,8 @@ void setup() {
   pinMode(THERMOSTAT_TEMPERATURE_LOW_PIN, INPUT_PULLUP);
   pinMode(PREASURE_HIGH_PIN, INPUT_PULLUP);
   pinMode(PREASURE_LOW_PIN, INPUT_PULLUP);
+
+  pinMode(INPUT_BUTTON, INPUT_PULLUP);
 
   // put your setup code here, to run once:
   pinMode(MAIN_ENGIN_PIN, OUTPUT);
@@ -80,6 +97,9 @@ void setup() {
   pinMode(VACUUM_AIR_PIN, OUTPUT);
   pinMode(HEATER_EN_PIN, OUTPUT);
   pinMode(PUMP_EN_PIN, OUTPUT);
+
+  pinMode(LED_INDICATOR, OUTPUT);
+
   setupInitialPinStates();
 }
 
@@ -89,31 +109,133 @@ void loop() {
   thermostat_state = getSensorState(THERMOSTAT_TEMPERATURE_HIGH_PIN, THERMOSTAT_TEMPERATURE_LOW_PIN);
   preassure_state = getSensorState(PREASURE_HIGH_PIN, PREASURE_LOW_PIN);
 
+  menu();
   if (!all_done) {
     bool has_err = checkForErrors(0, 0);
-    if (!has_err) {
-      Serial.println("Cold");
-      has_err = performColdWaterWash();
-    }
-    performWaitForAction(40000);
-    if (!has_err) {
-      Serial.println("Extra liquid");
-      has_err = performGetExternalLiquid(60000);
-    }
-    if (!has_err) {
-      Serial.println("HOT WATER");
-      has_err = performHotWaterWash();
-    }
-    performWaitForAction(40000);
-    if (!has_err) {
-      Serial.println("COLD WATER");
-      has_err = performColdWaterWash();
-    }
-    performWaitForAction(40000);
-    if (!has_err) {
-      has_err = performAirCleaning(60000);
+    switch (menu_state) {
+      case DEF:
+        if (!has_err) {
+          Serial.println("Cold");
+          has_err = performColdWaterWash();
+          performWaitForAction(40000);
+        }
+      case HOT_WASH:
+        if (!has_err) {
+          Serial.println("Extra liquid");
+          has_err = performGetExternalLiquid(60000);
+        }
+        if (!has_err) {
+          Serial.println("HOT WATER");
+          has_err = performHotWaterWash();
+        }
+        performWaitForAction(40000);
+      case COLD_WASH:
+        if (!has_err) {
+          Serial.println("COLD WATER");
+          has_err = performColdWaterWash();
+        }
+        performWaitForAction(40000);
+        if (!has_err) {
+          has_err = performAirCleaning(60000);
+        }
     }
     all_done = true;
+  }
+}
+
+void menu() {
+  bool play_actived = false;
+  while (!play_actived) {
+    int8_t result = readButtonPressTime();
+    if (result == 0) {
+      play_actived = true;
+    }
+    else if (result == 1) {
+      switch (menu_state) {
+        case DEF:
+          menu_state = HOT_WASH;
+          break;
+        case HOT_WASH:
+          menu_state = COLD_WASH;
+          break;
+        case COLD_WASH:
+          menu_state = DEF;
+          break;
+      }
+      last_blink_time = 0;
+      Serial.println(menu_state);
+    }
+    if (result != 0) {
+      blinkIndicatorLed();
+    }
+  }
+  digitalWrite(LED_INDICATOR, HIGH);
+}
+
+void blinkIndicatorLed() {
+
+  if (millis() > last_blink_time + getBlinkIndicatorLedOffset()) {
+    last_blink_time = millis();
+
+    if (menu_state == DEF) {
+      performRepeatedBlinking(2);
+    }
+    else if (menu_state == HOT_WASH) {
+      performRepeatedBlinking(3);
+    }
+    else if (menu_state == COLD_WASH) {
+      performRepeatedBlinking(4);
+    }
+
+
+  }
+}
+
+void performRepeatedBlinking(int8_t cnt) {
+  for (int8_t i = 0; i < cnt; i++) {
+    if (digitalRead(INPUT_BUTTON) == HIGH) {
+      digitalWrite(LED_INDICATOR, HIGH);
+      delay(200);
+      digitalWrite(LED_INDICATOR, LOW);
+      delay(200);
+    } else {
+      break;
+    }
+
+  }
+}
+
+
+int8_t readButtonPressTime() {
+  if (digitalRead(INPUT_BUTTON) == LOW) {
+    unsigned long start_time = millis();
+    while (digitalRead(INPUT_BUTTON) == LOW) {
+      if (millis() - start_time > PLAY_TIMEOUT) {
+        digitalWrite(LED_INDICATOR, HIGH);
+      }
+    }
+    unsigned long end_time = millis();
+    int time_diff = end_time - start_time;
+    delay(100);
+    Serial.println(time_diff);
+    if (time_diff > PLAY_TIMEOUT) {
+      return 0;
+    } else if (time_diff > CHANGE_MENU_STATE_TIMEOUT) {
+      return 1;
+    }
+  }
+  return -1;
+}
+
+int getBlinkIndicatorLedOffset() {
+  if (menu_state == DEF) {
+    return 5000;
+  }
+  else if (menu_state == HOT_WASH) {
+    return 5000;
+  }
+  else if (menu_state == COLD_WASH) {
+    return 5000;
   }
 }
 
@@ -158,7 +280,7 @@ bool performSystemFlushing() {
 
 
 bool performGetExternalLiquid(unsigned long get_external_fluid_period) {
-    performEngineStart();
+  performEngineStart();
   unsigned long end_time = millis() + get_external_fluid_period;
   digitalWrite(HOT_VACUUM_PIN, HIGH);
   digitalWrite(HOT_EXTERNAL_LIQUID_PIN, HIGH);
@@ -179,7 +301,7 @@ bool performGetExternalLiquid(unsigned long get_external_fluid_period) {
 
 
 bool performHotWaterWash() {
-    performEngineStart();
+  performEngineStart();
   unsigned long end_time = millis() + hot_wash_period;
   digitalWrite(HOT_VACUUM_PIN, HIGH);
   digitalWrite(HOT_EXTERNAL_LIQUID_PIN, HIGH);
@@ -225,7 +347,7 @@ bool performHotWaterWash() {
 }
 
 bool performAirCleaning(unsigned long air_cleaning_period) {
-    performEngineStart();
+  performEngineStart();
   unsigned long end_time = millis() + air_cleaning_period;
   digitalWrite(VACUUM_AIR_PIN, HIGH);
   digitalWrite(COLD_VACUUM_PIN, HIGH);
